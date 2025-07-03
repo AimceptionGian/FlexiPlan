@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 
 const FAVORITES_KEY = 'FLEXIPLAN_FAVORITES';
 

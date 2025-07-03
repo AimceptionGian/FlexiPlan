@@ -13,6 +13,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 function getTransportTypeAndIcon(category: string) {
   const lower = category.toLowerCase();
@@ -68,6 +69,8 @@ export default function FahrplanScreen() {
   const [hasMore, setHasMore] = useState({ earlier: true, later: true });
 
   const listRef = useRef<FlatList>(null);
+
+  const router = useRouter();
 
   const loadConnections = async (direction: 'earlier' | 'later', isInitialLoad = false) => {
     if ((!from || !to) && isInitialLoad) return;
@@ -188,6 +191,16 @@ export default function FahrplanScreen() {
     }
   };
 
+  const handlePress = (connection: Connection) => {
+    router.push({
+      pathname: '/verbindung/[id]',
+      params: {
+        id: "detail", // Platzhalter-Wert (wird in [id].tsx ignoriert)
+        connection: JSON.stringify(connection)
+      },
+    });
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
@@ -243,31 +256,33 @@ export default function FahrplanScreen() {
               renderLeftActions={renderLeftActions}
               onSwipeableLeftOpen={() => handleSwipe(item)}
             >
-              <View style={styles.connectionCard}>
-                <View style={styles.connectionHeader}>
-                  <View style={[styles.transportBadge, { backgroundColor: color }]}>
-                    {icon}
-                    <Text style={styles.transportText}>{category}</Text>
+              <TouchableOpacity onPress={() => handlePress(item)}>
+                <View style={styles.connectionCard}>
+                  <View style={styles.connectionHeader}>
+                    <View style={[styles.transportBadge, { backgroundColor: color }]}>
+                      {icon}
+                      <Text style={styles.transportText}>{category}</Text>
+                    </View>
+                    <Text style={styles.directionText}>Direction {item.to.station.name}</Text>
                   </View>
-                  <Text style={styles.directionText}>Direction {item.to.station.name}</Text>
-                </View>
 
-                <View style={styles.timeContainer}>
-                  <Text style={styles.departureTime}>{formatTime(item.from.departure)}</Text>
-                  <View style={styles.progressLine}>
-                    <View style={styles.progressBar} />
-                    <View style={styles.progressDot} />
+                  <View style={styles.timeContainer}>
+                    <Text style={styles.departureTime}>{formatTime(item.from.departure)}</Text>
+                    <View style={styles.progressLine}>
+                      <View style={styles.progressBar} />
+                      <View style={styles.progressDot} />
+                    </View>
+                    <Text style={styles.arrivalTime}>{formatTime(item.to.arrival)}</Text>
                   </View>
-                  <Text style={styles.arrivalTime}>{formatTime(item.to.arrival)}</Text>
-                </View>
 
-                <View style={styles.connectionFooter}>
-                  <Text style={styles.platformText}>
-                    {platformLabel} {item.from.platform || 'N/A'}
-                  </Text>
-                  <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
+                  <View style={styles.connectionFooter}>
+                    <Text style={styles.platformText}>
+                      {platformLabel} {item.from.platform || 'N/A'}
+                    </Text>
+                    <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
+                  </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             </Swipeable>
           );
         }}
