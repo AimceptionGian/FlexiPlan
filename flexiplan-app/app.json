@@ -6,7 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "flexiplanapp",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#f0f0f0",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true

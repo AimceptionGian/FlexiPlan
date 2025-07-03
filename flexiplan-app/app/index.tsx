@@ -3,13 +3,14 @@ import {
   View,
   Text,
   TextInput,
-  Button,
+  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   FlatList,
   ActivityIndicator,
-  Keyboard
+  Keyboard,
+  StatusBar
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -17,14 +18,30 @@ function getTransportTypeAndIcon(category: string) {
   const lower = category.toLowerCase();
 
   if (lower.startsWith('s') || lower.startsWith('r') || lower === 'ic' || lower === 'ir') {
-    return { type: 'Zug', icon: <Ionicons name="train" size={20} color="#444" /> };
+    return {
+      type: 'Zug',
+      icon: <Ionicons name="train" size={16} color="#fff" />,
+      color: '#0066CC'
+    };
   } else if (lower.startsWith('b')) {
-    return { type: 'Bus', icon: <MaterialCommunityIcons name="bus" size={20} color="#444" /> };
+    return {
+      type: 'Bus',
+      icon: <MaterialCommunityIcons name="bus" size={16} color="#fff" />,
+      color: '#FF6B35'
+    };
   } else if (lower.startsWith('t')) {
-    return { type: 'Tram', icon: <MaterialCommunityIcons name="tram" size={20} color="#444" /> };
+    return {
+      type: 'Tram',
+      icon: <MaterialCommunityIcons name="tram" size={16} color="#fff" />,
+      color: '#28A745'
+    };
   }
 
-  return { type: 'Unbekannt', icon: <Ionicons name="help-circle" size={20} color="#444" /> };
+  return {
+    type: 'Unbekannt',
+    icon: <Ionicons name="help-circle" size={16} color="#fff" />,
+    color: '#6C757D'
+  };
 }
 
 type Connection = {
@@ -65,119 +82,287 @@ export default function FahrplanScreen() {
     }
   };
 
+  const swapStations = () => {
+    const temp = from;
+    setFrom(to);
+    setTo(temp);
+  };
+
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('de-CH', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatDuration = (duration: string) => {
+    if (!duration) return '';
+
+    // Format: "00d00:22:00" -> "22 min" or "01d01:22:00" -> "1 h 22 min"
+    const parts = duration.split(':');
+    if (parts.length < 3) return duration;
+
+    const dayHour = parts[0]; // "00d00" or "01d01"
+    const minutes = parseInt(parts[1], 10);
+    const seconds = parseInt(parts[2], 10);
+
+    // Extract days and hours from first part
+    const dayMatch = dayHour.match(/(\d+)d(\d+)/);
+    if (!dayMatch) return duration;
+
+    const days = parseInt(dayMatch[1], 10);
+    const hours = parseInt(dayMatch[2], 10);
+
+    // Calculate total hours
+    const totalHours = days * 24 + hours;
+
+    if (totalHours === 0) {
+      return `${minutes} min`;
+    } else if (minutes === 0) {
+      return `${totalHours} h`;
+    } else {
+      return `${totalHours} h ${minutes} min`;
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}
-    >
-      <Text style={styles.label}>Start</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="z.B. Zürich HB"
-        value={from}
-        onChangeText={setFrom}
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      <Text style={styles.label}>Ziel</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="z.B. Bülach"
-        value={to}
-        onChangeText={setTo}
-      />
 
-      <View style={styles.buttonContainer}>
-        <Button title="Verbindungen suchen" onPress={handleSearch} />
+
+      {/* Search Section */}
+      <View style={styles.searchSection}>
+        <View style={styles.inputContainer}>
+          <View style={styles.inputRow}>
+            <Ionicons name="radio-button-on" size={16} color="#fff" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Von"
+              placeholderTextColor="#999"
+              value={from}
+              onChangeText={setFrom}
+            />
+          </View>
+
+
+          <View style={styles.inputRow}>
+            <Ionicons name="location" size={16} color="#fff" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Nach"
+              placeholderTextColor="#999"
+              value={to}
+              onChangeText={setTo}
+            />
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.swapButton} onPress={swapStations}>
+          <Ionicons name="swap-vertical" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      {loading && <ActivityIndicator size="large" style={{ marginTop: 20 }} />}
 
+
+      {/* Search Button */}
+      <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+        <Text style={styles.searchButtonText}>Verbindungen suchen</Text>
+      </TouchableOpacity>
+
+      {loading && <ActivityIndicator size="large" color="#fff" style={styles.loader} />}
+
+      {/* Connections List */}
       <FlatList
         data={connections}
         keyExtractor={(item, index) => index.toString()}
-        contentContainerStyle={{ marginTop: 20 }}
+        contentContainerStyle={styles.listContainer}
         renderItem={({ item }) => {
           const category = item.sections?.[0]?.journey?.category || '';
-          const { type, icon } = getTransportTypeAndIcon(category);
+          const { type, icon, color } = getTransportTypeAndIcon(category);
           const platformLabel = type === 'Bus' ? 'Kante' : 'Gleis';
 
           return (
-            <View style={styles.connectionItem}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {icon}
-                <Text style={[styles.connectionText, { marginLeft: 8 }]}>
-                  {item.from.station.name} ➜ {item.to.station.name}
-                </Text>
+            <View style={styles.connectionCard}>
+              <View style={styles.connectionHeader}>
+                <View style={[styles.transportBadge, { backgroundColor: color }]}>
+                  {icon}
+                  <Text style={styles.transportText}>{category}</Text>
+                </View>
+                <Text style={styles.directionText}>Direction {item.to.station.name}</Text>
               </View>
 
-              <Text style={styles.timeText}>
-                Abfahrt: {new Date(item.from.departure).toLocaleTimeString()} | Ankunft: {new Date(item.to.arrival).toLocaleTimeString()}
-              </Text>
+              <View style={styles.timeContainer}>
+                <Text style={styles.departureTime}>{formatTime(item.from.departure)}</Text>
+                <View style={styles.progressLine}>
+                  <View style={styles.progressBar} />
+                  <View style={styles.progressDot} />
+                </View>
+                <Text style={styles.arrivalTime}>{formatTime(item.to.arrival)}</Text>
+              </View>
 
-              {item.from.platform && (
+              <View style={styles.connectionFooter}>
                 <Text style={styles.platformText}>
-                  {platformLabel}: {item.from.platform}
+                  {platformLabel} {item.from.platform || 'N/A'}
                 </Text>
-              )}
-
-              <Text style={styles.durationText}>
-                Dauer: {item.duration?.replace('00d', '').replace('00:', '')}
-              </Text>
+                <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
+              </View>
             </View>
           );
         }}
       />
-
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#1C1C1E',
   },
-  label: {
-    marginTop: 12,
-    fontWeight: 'bold',
-    fontSize: 16,
+
+  searchSection: {
+    backgroundColor: '#2C2C2E',
+    margin: 16,
+    marginTop: 60, // Extra margin for status bar
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputContainer: {
+    flex: 1,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  inputIcon: {
+    marginRight: 12,
   },
   input: {
-    borderColor: '#ccc',
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
     paddingVertical: 8,
+  },
+
+  swapButton: {
+    backgroundColor: '#3A3A3C',
+    borderRadius: 20,
+    padding: 8,
+    marginLeft: 12,
+  },
+
+  searchButton: {
+    backgroundColor: '#DC143C',
+    marginHorizontal: 16,
+    marginBottom: 16,
     borderRadius: 8,
-    marginTop: 4,
+    paddingVertical: 12,
   },
-  buttonContainer: {
-    marginTop: 20,
+  searchButtonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  connectionItem: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 10,
-    padding: 12,
+  loader: {
+    marginVertical: 20,
+  },
+  listContainer: {
+    paddingHorizontal: 16,
+  },
+  connectionCard: {
+    backgroundColor: '#2C2C2E',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 12,
   },
-  connectionText: {
-    fontWeight: 'bold',
+  connectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  transportBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  transportText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  directionText: {
+    color: '#fff',
     fontSize: 16,
+    flex: 1,
   },
-  timeText: {
-    marginTop: 4,
-    color: '#333',
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  durationText: {
-    marginTop: 2,
-    color: '#666',
-    fontSize: 13,
+  departureTime: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    minWidth: 60,
+  },
+  progressLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#48484A',
+    marginHorizontal: 16,
+    borderRadius: 1,
+    position: 'relative',
+  },
+  progressBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 1,
+  },
+  progressDot: {
+    position: 'absolute',
+    right: 0,
+    top: -3,
+    width: 8,
+    height: 8,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+  },
+  arrivalTime: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    minWidth: 60,
+    textAlign: 'right',
+  },
+  connectionFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   platformText: {
-    marginTop: 4,
-    color: '#444',
-    fontSize: 13,
-    fontStyle: 'italic',
+    color: '#fff',
+    fontSize: 14,
+  },
+  occupancyText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  durationText: {
+    color: '#fff',
+    fontSize: 14,
   },
 });

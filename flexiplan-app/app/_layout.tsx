@@ -6,21 +6,58 @@ export default function TabLayout() {
         <Tabs
             screenOptions={({ route }) => ({
                 headerShown: true,
+                headerStyle: {
+                    backgroundColor: '#DC143C',
+                    elevation: 0,
+                    shadowOpacity: 0,
+                    borderBottomWidth: 0,
+                },
+                headerTitleStyle: {
+                    color: '#fff',
+                    fontSize: 18,
+                    fontWeight: '800',
+                },
+                headerTintColor: '#fff',
                 tabBarIcon: ({ color, size }) => {
                     const iconName = route.name === 'index' ? 'train' : 'star';
                     return <Ionicons name={iconName as any} size={size} color={color} />;
                 },
-                tabBarActiveTintColor: 'crimson',
-                tabBarInactiveTintColor: 'gray',
+                tabBarActiveTintColor: '#ffffff',
+                tabBarInactiveTintColor: '#888888',
+                tabBarStyle: {
+                    backgroundColor: '#000000',
+                    borderTopWidth: 0,
+                    borderTopColor: 'transparent',
+                    height: 90,
+                    paddingBottom: 10,
+                    paddingTop: 10,
+                    elevation: 0,
+                    shadowOpacity: 0,
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowRadius: 0,
+                },
+                tabBarLabelStyle: {
+                    fontSize: 12,
+                    fontWeight: '500',
+                },
+                tabBarItemStyle: {
+                    paddingVertical: 5,
+                },
             })}
         >
             <Tabs.Screen
                 name="index"
-                options={{ title: 'Fahrplan' }}
+                options={{
+                    title: 'Fahrplan',
+                    headerTitle: 'Fahrplan',
+                }}
             />
             <Tabs.Screen
                 name="favoriten"
-                options={{ title: 'Favoriten' }}
+                options={{
+                    title: 'Favoriten',
+                    headerTitle: 'Favoriten',
+                }}
             />
         </Tabs>
     );
