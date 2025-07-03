@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -63,24 +63,53 @@ export default function FahrplanScreen() {
   const [to, setTo] = useState('');
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
-  const handleSearch = async () => {
-    if (!from || !to) return;
-    Keyboard.dismiss();
-    setLoading(true);
+  const loadConnections = async (pageNum: number, isInitialLoad = false) => {
+    if ((!from || !to) && isInitialLoad) return;
+
+    const loadingState = isInitialLoad ? setLoading : setLoadingMore;
+    loadingState(true);
 
     try {
       const response = await fetch(
-        `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+        `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${pageNum}`
       );
       const data = await response.json();
-      setConnections(data.connections || []);
+
+      if (isInitialLoad) {
+        setConnections(data.connections || []);
+        setPage(1);
+        setHasMore(true);
+      } else {
+        if (data.connections && data.connections.length > 0) {
+          setConnections(prev => [...prev, ...data.connections]);
+        } else {
+          setHasMore(false);
+        }
+      }
     } catch (error) {
       console.error('Fehler beim Laden der Verbindungen:', error);
     } finally {
-      setLoading(false);
+      loadingState(false);
     }
   };
+
+  const handleSearch = useCallback(() => {
+    if (!from || !to) return;
+    Keyboard.dismiss();
+    loadConnections(0, true);
+  }, [from, to]);
+
+  const loadMoreConnections = useCallback(() => {
+    if (!loading && !loadingMore && hasMore) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadConnections(nextPage);
+    }
+  }, [loading, loadingMore, hasMore, page]);
 
   const swapStations = () => {
     const temp = from;
@@ -210,6 +239,13 @@ export default function FahrplanScreen() {
             </View>
           );
         }}
+        onEndReached={loadMoreConnections}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingMore ? (
+            <ActivityIndicator size="small" color="#fff" style={styles.loadMoreIndicator} />
+          ) : null
+        }
       />
     </View>
   );
@@ -364,5 +400,8 @@ const styles = StyleSheet.create({
   durationText: {
     color: '#fff',
     fontSize: 14,
+  },
+  loadMoreIndicator: {
+    marginVertical: 20,
   },
 });
