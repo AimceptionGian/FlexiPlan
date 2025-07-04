@@ -37,7 +37,6 @@ export default function VerbindungDetailScreen() {
     const { connection } = useLocalSearchParams();
     const data = connection ? JSON.parse(connection as string) : null;
 
-    console.log('Received data:', data);
     if (!data) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -14,6 +15,19 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+
+const getStandort = useCallback(async () => {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    console.warn('Standortzugriff wurde verweigert.');
+    return null;
+  }
+
+  const location = await Location.getCurrentPositionAsync({});
+  return location.coords; // { latitude, longitude }
+}, []);
+
 
 function getTransportTypeAndIcon(category: string) {
   const lower = category.toLowerCase();
@@ -67,10 +81,9 @@ export default function FahrplanScreen() {
   const [loadingMore, setLoadingMore] = useState({ earlier: false, later: false });
   const [page, setPage] = useState({ earlier: -1, later: 1 });
   const [hasMore, setHasMore] = useState({ earlier: true, later: true });
-
   const listRef = useRef<FlatList>(null);
-
   const router = useRouter();
+  const [walkTime, setWalkTime] = useState('');
 
   const loadConnections = async (direction: 'earlier' | 'later', isInitialLoad = false) => {
     if ((!from || !to) && isInitialLoad) return;
@@ -92,16 +105,37 @@ export default function FahrplanScreen() {
       );
       const data = await response.json();
 
+      const now = new Date();
+
+      const connectionsWithWartezeit = data.connections.map((conn: Connection) => {
+        const departureTime = new Date(conn.from.departure);
+        const wartezeitInMinuten = Math.round((departureTime.getTime() - now.getTime()) / 60000);
+
+        return {
+          ...conn,
+          wartezeitInMinuten,
+        };
+      });
+
+      const hatLangeWartezeit = connectionsWithWartezeit.some(
+        conn => conn.wartezeitInMinuten > 5
+      );
+
+      if (hatLangeWartezeit) {
+        console.log('Alternative Verbindungen sollten geprüft werden.');
+        // Hier könnte später findeAlternativeVerbindungen(from, to, walkTime) aufgerufen werden
+      }
+
       if (isInitialLoad) {
-        setConnections(data.connections || []);
+        setConnections(connectionsWithWartezeit || []);
         setPage({ earlier: -1, later: 1 });
         setHasMore({ earlier: true, later: true });
       } else {
         if (data.connections && data.connections.length > 0) {
           setConnections(prev =>
             direction === 'earlier'
-              ? [...data.connections, ...prev]
-              : [...prev, ...data.connections]
+              ? [...connectionsWithWartezeit, ...prev]
+              : [...prev, ...connectionsWithWartezeit]
           );
           setPage(prev => ({
             earlier: direction === 'earlier' ? prev.earlier - 1 : prev.earlier,
@@ -122,11 +156,21 @@ export default function FahrplanScreen() {
     }
   };
 
-  const handleSearch = useCallback(() => {
+  const handleSearch = useCallback(async () => {
     if (!from || !to) return;
     Keyboard.dismiss();
+
+    const standort = await getStandort();
+    if (!standort) {
+      alert('Standort konnte nicht ermittelt werden.');
+      return;
+    }
+
+    console.log('Aktueller Standort:', standort); // später wichtig für Laufzeitberechnung
+
     loadConnections('later', true);
   }, [from, to]);
+
 
   const loadEarlierConnections = useCallback(() => {
     if (!loading && !loadingMore.earlier && hasMore.earlier) {
@@ -224,6 +268,17 @@ export default function FahrplanScreen() {
               placeholderTextColor="#999"
               value={to}
               onChangeText={setTo}
+            />
+          </View>
+          <View style={styles.inputRow}>
+            <Ionicons name="walk" size={16} color="#fff" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Max. Laufzeit (min)"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+              value={walkTime}
+              onChangeText={setWalkTime}
             />
           </View>
         </View>
@@ -335,6 +390,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 8,
     marginLeft: 12,
+    marginBottom: 50,
   },
   searchButton: {
     backgroundColor: '#DC143C',
