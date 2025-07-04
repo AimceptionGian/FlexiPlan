@@ -61,6 +61,13 @@ export default function TabLayout() {
                         headerTitle: 'Favoriten',
                     }}
                 />
+                <Tabs.Screen
+                    name="verbindung/[id]"
+                    options={{
+                        title: 'Route',
+                        href: null,
+                    }}
+                />
             </Tabs>
         </GestureHandlerRootView>
     );
