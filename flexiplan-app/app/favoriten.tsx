@@ -1,9 +1,11 @@
 // @ts-nocheck
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useRouter } from 'expo-router';
+import { Swipeable } from 'react-native-gesture-handler';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const FAVORITES_KEY = 'FLEXIPLAN_FAVORITES';
 
@@ -30,24 +32,54 @@ export default function FavoritenScreen() {
         }, [])
     );
 
-    const renderItem = ({ item }: any) => (
-        <View style={styles.item}>
-            <TouchableOpacity onPress={() => handlePress(item)}>
-                <Text style={styles.text}>
-                    {item?.from?.station?.name} → {item?.to?.station?.name}
-                </Text>
-                <Text style={styles.subtext}>
-                    {formatTime(item?.from?.departure)} – {formatTime(item?.to?.arrival)}
-                </Text>
+    const handleDelete = async (connection: any) => {
+        try {
+            const updated = favorites.filter(
+                (fav) => JSON.stringify(fav) !== JSON.stringify(connection)
+            );
+            await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
+            setFavorites(updated);
+        } catch (err) {
+            console.error('Fehler beim Löschen des Favoriten:', err);
+            Alert.alert('Fehler', 'Der Favorit konnte nicht gelöscht werden');
+        }
+    };
+
+    const renderRightActions = (connection: any) => {
+        return (
+            <TouchableOpacity
+                style={styles.deleteContainer}
+                onPress={() => handleDelete(connection)}
+            >
+                <MaterialIcons name="delete" size={24} color="white" />
             </TouchableOpacity>
-        </View>
+        );
+    };
+
+    const renderItem = ({ item }: any) => (
+        <Swipeable
+            renderRightActions={() => renderRightActions(item)}
+            rightThreshold={40}
+            containerStyle={styles.swipeableContainer}
+        >
+            <View style={styles.item}>
+                <TouchableOpacity onPress={() => handlePress(item)}>
+                    <Text style={styles.text}>
+                        {item?.from?.station?.name} → {item?.to?.station?.name}
+                    </Text>
+                    <Text style={styles.subtext}>
+                        {formatTime(item?.from?.departure)} – {formatTime(item?.to?.arrival)}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </Swipeable>
     );
 
-    const handlePress = (connection: Connection) => {
+    const handlePress = (connection: any) => {
         router.push({
             pathname: '/verbindung/[id]',
             params: {
-                id: "detail", // Platzhalter-Wert (wird in [id].tsx ignoriert)
+                id: "detail",
                 connection: JSON.stringify(connection)
             },
         });
@@ -55,7 +87,6 @@ export default function FavoritenScreen() {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Favoriten</Text>
             <FlatList
                 data={favorites}
                 keyExtractor={(_, index) => index.toString()}
@@ -68,18 +99,25 @@ export default function FavoritenScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#1C1C1E', padding: 16 },
-    title: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 16 },
+    swipeableContainer: {
+        marginBottom: 10,
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
     item: {
         backgroundColor: '#2C2C2E',
         padding: 12,
         borderRadius: 8,
-        marginBottom: 10,
     },
     text: { color: '#fff', fontSize: 16 },
     subtext: { color: '#bbb', fontSize: 14, marginTop: 4 },
     empty: { color: '#888', textAlign: 'center', marginTop: 40 },
+    deleteContainer: {
+        backgroundColor: '#FF3B30',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: 70,
+        marginLeft: 10,
+        borderRadius: 8,
+    },
 });
-function handlePress(item: any): void {
-    throw new Error('Function not implemented.');
-}
-

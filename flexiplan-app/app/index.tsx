@@ -9,25 +9,14 @@ import {
   Keyboard,
   FlatList,
   ActivityIndicator,
-  StatusBar
+  StatusBar,
+  Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-
-const getStandort = useCallback(async () => {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') {
-    console.warn('Standortzugriff wurde verweigert.');
-    return null;
-  }
-
-  const location = await Location.getCurrentPositionAsync({});
-  return location.coords; // { latitude, longitude }
-}, []);
-
 
 function getTransportTypeAndIcon(category: string) {
   const lower = category.toLowerCase();
@@ -59,6 +48,33 @@ function getTransportTypeAndIcon(category: string) {
   };
 }
 
+const metersPerMinute = 80;
+
+async function getStandort() {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Standort', 'Standortzugriff wurde verweigert.');
+    return null;
+  }
+
+  const location = await Location.getCurrentPositionAsync({});
+  return location.coords; // { latitude, longitude }
+}
+
+// Funktion um Koordinaten in Adresse umzuwandeln
+async function reverseGeocode(latitude: number, longitude: number) {
+  try {
+    const response = await Location.reverseGeocodeAsync({ latitude, longitude });
+    if (response.length > 0) {
+      const address = response[0];
+      return `${address.street || ''} ${address.streetNumber || ''}, ${address.city || ''}, ${address.country || ''}`.trim();
+    }
+  } catch (error) {
+    console.error('Fehler beim Reverse Geocoding:', error);
+  }
+  return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+}
+
 type Connection = {
   sections: any;
   from: {
@@ -85,6 +101,69 @@ export default function FahrplanScreen() {
   const router = useRouter();
   const [walkTime, setWalkTime] = useState('');
 
+  // Neue States für Position und Zeit
+  const [useCurrentPosition, setUseCurrentPosition] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState<{ latitude: number, longitude: number } | null>(null);
+  const [departureTime, setDepartureTime] = useState('');
+  const [departureDate, setDepartureDate] = useState('');
+  const [isPositionAtDestination, setIsPositionAtDestination] = useState(false);
+
+  // Funktion zum Setzen der aktuellen Position
+  const handleUseCurrentPosition = async () => {
+    try {
+      const coords = await getStandort();
+      if (coords) {
+        setCurrentPosition(coords);
+        setUseCurrentPosition(true);
+        setIsPositionAtDestination(false);
+
+        // Reverse Geocoding für bessere Anzeige
+        const address = await reverseGeocode(coords.latitude, coords.longitude);
+        setFrom(address);
+      }
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Position:', error);
+      Alert.alert('Fehler', 'Position konnte nicht ermittelt werden.');
+    }
+  };
+
+  // Funktion zum Setzen der aktuellen Position als Ziel
+  const handleUseCurrentPositionAsDestination = async () => {
+    try {
+      const coords = await getStandort();
+      if (coords) {
+        setCurrentPosition(coords);
+        setUseCurrentPosition(true);
+        setIsPositionAtDestination(true);
+
+        // Reverse Geocoding für bessere Anzeige
+        const address = await reverseGeocode(coords.latitude, coords.longitude);
+        setTo(address);
+      }
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Position:', error);
+      Alert.alert('Fehler', 'Position konnte nicht ermittelt werden.');
+    }
+  };
+
+  // Funktion zum Formatieren der aktuellen Zeit
+  const getCurrentTime = () => {
+    const now = new Date();
+    return now.toTimeString().slice(0, 5); // HH:MM Format
+  };
+
+  // Funktion zum Formatieren des aktuellen Datums
+  const getCurrentDate = () => {
+    const now = new Date();
+    return now.toISOString().split('T')[0]; // YYYY-MM-DD Format
+  };
+
+  // Funktion zum Setzen der aktuellen Zeit
+  const handleUseCurrentTime = () => {
+    setDepartureTime(getCurrentTime());
+    setDepartureDate(getCurrentDate());
+  };
+
   const loadConnections = async (direction: 'earlier' | 'later', isInitialLoad = false) => {
     if ((!from || !to) && isInitialLoad) return;
 
@@ -100,9 +179,28 @@ export default function FahrplanScreen() {
     }
 
     try {
-      const response = await fetch(
-        `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${apiPage}`
-      );
+      // URL Parameter für die API erstellen
+      let fromParam = from;
+      let toParam = to;
+
+      // Wenn aktuelle Position verwendet wird, Koordinaten verwenden
+      if (useCurrentPosition && currentPosition) {
+        if (isPositionAtDestination) {
+          toParam = `${currentPosition.latitude},${currentPosition.longitude}`;
+        } else {
+          fromParam = `${currentPosition.latitude},${currentPosition.longitude}`;
+        }
+      }
+
+      let apiUrl = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromParam)}&to=${encodeURIComponent(toParam)}&page=${apiPage}`;
+
+      // Zeit und Datum hinzufügen, falls angegeben
+      if (departureDate && departureTime) {
+        const datetime = `${departureDate} ${departureTime}`;
+        apiUrl += `&date=${encodeURIComponent(datetime)}`;
+      }
+
+      const response = await fetch(apiUrl);
       const data = await response.json();
 
       const now = new Date();
@@ -147,6 +245,7 @@ export default function FahrplanScreen() {
       }
     } catch (error) {
       console.error('Fehler beim Laden der Verbindungen:', error);
+      Alert.alert('Fehler', 'Verbindungen konnten nicht geladen werden.');
     } finally {
       if (isInitialLoad) {
         setLoading(false);
@@ -160,17 +259,17 @@ export default function FahrplanScreen() {
     if (!from || !to) return;
     Keyboard.dismiss();
 
-    const standort = await getStandort();
-    if (!standort) {
-      alert('Standort konnte nicht ermittelt werden.');
-      return;
+    // Wenn aktuelle Position verwendet wird, aber noch nicht gesetzt ist
+    if (useCurrentPosition && !currentPosition) {
+      if (isPositionAtDestination) {
+        await handleUseCurrentPositionAsDestination();
+      } else {
+        await handleUseCurrentPosition();
+      }
     }
 
-    console.log('Aktueller Standort:', standort); // später wichtig für Laufzeitberechnung
-
     loadConnections('later', true);
-  }, [from, to]);
-
+  }, [from, to, useCurrentPosition, currentPosition, departureTime, departureDate]);
 
   const loadEarlierConnections = useCallback(() => {
     if (!loading && !loadingMore.earlier && hasMore.earlier) {
@@ -185,9 +284,15 @@ export default function FahrplanScreen() {
   }, [loading, loadingMore.later, hasMore.later]);
 
   const swapStations = () => {
+    // Texte tauschen
     const temp = from;
     setFrom(to);
     setTo(temp);
+
+    // Position-Status entsprechend anpassen
+    if (useCurrentPosition) {
+      setIsPositionAtDestination(!isPositionAtDestination);
+    }
   };
 
   const formatTime = (dateString: string) =>
@@ -216,22 +321,31 @@ export default function FahrplanScreen() {
 
   const FAVORITES_KEY = 'FLEXIPLAN_FAVORITES';
 
-  const handleSwipe = async (connection: Connection) => {
+  const handleSwipe = async (connection: Connection, swipeableRef: any) => {
     try {
       const stored = await AsyncStorage.getItem(FAVORITES_KEY);
       const currentFavorites = stored ? JSON.parse(stored) : [];
 
-      // Doppelte vermeiden (optional)
-      const exists = currentFavorites.some((fav: Connection) =>
+      const existingIndex = currentFavorites.findIndex((fav: Connection) =>
         JSON.stringify(fav) === JSON.stringify(connection)
       );
-      if (exists) return;
 
-      const updated = [...currentFavorites, connection];
-      await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
-      console.log('Favorit gespeichert!');
+      if (existingIndex !== -1) {
+        const updated = [
+          ...currentFavorites.slice(0, existingIndex),
+          ...currentFavorites.slice(existingIndex + 1)
+        ];
+        await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
+        console.log('Favorit entfernt!');
+      } else {
+        const updated = [...currentFavorites, connection];
+        await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
+        console.log('Favorit gespeichert!');
+      }
+
+      swipeableRef.close();
     } catch (err) {
-      console.error('Fehler beim Speichern des Favoriten:', err);
+      console.error('Fehler beim Bearbeiten der Favoriten:', err);
     }
   };
 
@@ -239,7 +353,7 @@ export default function FahrplanScreen() {
     router.push({
       pathname: '/verbindung/[id]',
       params: {
-        id: "detail", // Platzhalter-Wert (wird in [id].tsx ignoriert)
+        id: "detail",
         connection: JSON.stringify(connection)
       },
     });
@@ -253,23 +367,75 @@ export default function FahrplanScreen() {
           <View style={styles.inputRow}>
             <Ionicons name="radio-button-on" size={16} color="#fff" style={styles.inputIcon} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, useCurrentPosition && !isPositionAtDestination && styles.inputDisabled]}
               placeholder="Von"
               placeholderTextColor="#999"
               value={from}
-              onChangeText={setFrom}
+              onChangeText={(text) => {
+                setFrom(text);
+                if (useCurrentPosition && !isPositionAtDestination) {
+                  setUseCurrentPosition(false);
+                  setCurrentPosition(null);
+                }
+              }}
+              editable={!(useCurrentPosition && !isPositionAtDestination)}
             />
+            <TouchableOpacity
+              style={[styles.positionButton, useCurrentPosition && !isPositionAtDestination && styles.positionButtonActive]}
+              onPress={handleUseCurrentPosition}
+            >
+              <Ionicons name="location" size={16} color="#fff" />
+            </TouchableOpacity>
           </View>
+
           <View style={styles.inputRow}>
             <Ionicons name="location" size={16} color="#fff" style={styles.inputIcon} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, useCurrentPosition && isPositionAtDestination && styles.inputDisabled]}
               placeholder="Nach"
               placeholderTextColor="#999"
               value={to}
-              onChangeText={setTo}
+              onChangeText={(text) => {
+                setTo(text);
+                if (useCurrentPosition && isPositionAtDestination) {
+                  setUseCurrentPosition(false);
+                  setCurrentPosition(null);
+                }
+              }}
+              editable={!(useCurrentPosition && isPositionAtDestination)}
             />
+            <TouchableOpacity
+              style={[styles.positionButton, useCurrentPosition && isPositionAtDestination && styles.positionButtonActive]}
+              onPress={handleUseCurrentPositionAsDestination}
+            >
+              <Ionicons name="location" size={16} color="#fff" />
+            </TouchableOpacity>
           </View>
+
+          <View style={styles.inputRow}>
+            <Ionicons name="time" size={16} color="#fff" style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, styles.timeInput]}
+              placeholder="Datum (YYYY-MM-DD)"
+              placeholderTextColor="#999"
+              value={departureDate}
+              onChangeText={setDepartureDate}
+            />
+            <TextInput
+              style={[styles.input, styles.timeInput]}
+              placeholder="Zeit (HH:MM)"
+              placeholderTextColor="#999"
+              value={departureTime}
+              onChangeText={setDepartureTime}
+            />
+            <TouchableOpacity
+              style={styles.nowButton}
+              onPress={handleUseCurrentTime}
+            >
+              <Text style={styles.nowButtonText}>Jetzt</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.inputRow}>
             <Ionicons name="walk" size={16} color="#fff" style={styles.inputIcon} />
             <TextInput
@@ -282,6 +448,7 @@ export default function FahrplanScreen() {
             />
           </View>
         </View>
+
         <TouchableOpacity style={styles.swapButton} onPress={swapStations}>
           <Ionicons name="swap-vertical" size={24} color="#fff" />
         </TouchableOpacity>
@@ -302,16 +469,22 @@ export default function FahrplanScreen() {
           const category = item.sections?.[0]?.journey?.category || '';
           const { type, icon, color } = getTransportTypeAndIcon(category);
           const platformLabel = type === 'Bus' ? 'Kante' : 'Gleis';
+          let swipeableRef: any = null;
 
           return (
             <Swipeable
+              ref={ref => { swipeableRef = ref; }}
               friction={2}
               leftThreshold={80}
               overshootLeft={false}
               renderLeftActions={renderLeftActions}
-              onSwipeableLeftOpen={() => handleSwipe(item)}
+              onSwipeableLeftOpen={() => handleSwipe(item, swipeableRef)}
             >
-              <TouchableOpacity onPress={() => handlePress(item)}>
+              <TouchableOpacity
+                onPress={() => handlePress(item)}
+                activeOpacity={1}
+                style={styles.touchableContainer}
+              >
                 <View style={styles.connectionCard}>
                   <View style={styles.connectionHeader}>
                     <View style={[styles.transportBadge, { backgroundColor: color }]}>
@@ -385,12 +558,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: 8,
   },
+  inputDisabled: {
+    color: '#999',
+  },
+  timeInput: {
+    flex: 1,
+    marginRight: 8,
+  },
+  positionButton: {
+    backgroundColor: '#3A3A3C',
+    borderRadius: 16,
+    padding: 8,
+    marginLeft: 8,
+  },
+  positionButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  nowButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginLeft: 8,
+  },
+  nowButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   swapButton: {
     backgroundColor: '#3A3A3C',
     borderRadius: 20,
     padding: 8,
     marginLeft: 12,
-    marginBottom: 50,
+    marginBottom: 70,
   },
   searchButton: {
     backgroundColor: '#DC143C',
@@ -407,6 +608,9 @@ const styles = StyleSheet.create({
   },
   loader: { marginVertical: 20 },
   listContainer: { paddingHorizontal: 16 },
+  touchableContainer: {
+    flex: 1,
+  },
   connectionCard: {
     backgroundColor: '#2C2C2E',
     borderRadius: 12,
@@ -501,8 +705,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFD700',
     justifyContent: 'center',
     alignItems: 'center',
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
+    borderRadius: 12,
     marginBottom: 12,
   },
 });
